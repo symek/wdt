@@ -55,7 +55,7 @@ int64_t LogEncoderDecoder::encodeLogHeader(char* dest, int64_t max,
                 << recoveryId << " , " << senderIp;
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size);
+  folly::storeUnaligned<int16_t>(dest, static_cast<int16_t>(size));
   return (size + sizeof(int16_t));
 }
 
@@ -92,7 +92,8 @@ int64_t LogEncoderDecoder::encodeFileCreationEntry(char* dest, int64_t max,
                 << fileName;
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size - sizeof(int16_t));
+  folly::storeUnaligned<int16_t>(dest,
+                                 static_cast<int16_t>(size - sizeof(int16_t)));
   return size;
 }
 
@@ -127,7 +128,8 @@ int64_t LogEncoderDecoder::encodeBlockWriteEntry(char* dest, int64_t max,
     WLOG(ERROR) << "Failed to encode blockwrite entry into " << max;
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size - sizeof(int16_t));
+  folly::storeUnaligned<int16_t>(dest,
+                                 static_cast<int16_t>(size - sizeof(int16_t)));
   return size;
 }
 
@@ -158,7 +160,8 @@ int64_t LogEncoderDecoder::encodeFileResizeEntry(char* dest, int64_t max,
   if (!ok) {
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size - sizeof(int16_t));
+  folly::storeUnaligned<int16_t>(dest,
+                                 static_cast<int16_t>(size - sizeof(int16_t)));
   return size;
 }
 
@@ -188,7 +191,8 @@ int64_t LogEncoderDecoder::encodeFileInvalidationEntry(char* dest, int64_t max,
     WLOG(ERROR) << "Failed to encode inval entry into " << max;
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size - sizeof(int16_t));
+  folly::storeUnaligned<int16_t>(dest,
+                                 static_cast<int16_t>(size - sizeof(int16_t)));
   return size;
 }
 
@@ -214,7 +218,8 @@ int64_t LogEncoderDecoder::encodeDirectoryInvalidationEntry(char* dest,
     WLOG(ERROR) << "No room in " << max << " for dir inval entry";
     return -1;
   }
-  folly::storeUnaligned<int16_t>(dest, size - sizeof(int16_t));
+  folly::storeUnaligned<int16_t>(dest,
+                                 static_cast<int16_t>(size - sizeof(int16_t)));
   return size;
 }
 
