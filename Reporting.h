@@ -18,6 +18,7 @@
 #include <chrono>
 #include <iterator>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>

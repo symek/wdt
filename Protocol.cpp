@@ -9,6 +9,8 @@
 #include <wdt/Protocol.h>
 #include <wdt/util/SerializationUtil.h>
 
+#include <algorithm>
+
 namespace facebook {
 namespace wdt {
 

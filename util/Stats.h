@@ -51,10 +51,11 @@
 
 #include <folly/ThreadLocal.h>
 #include <sys/types.h>
+#include <unistd.h>
 
-#include <boost/noncopyable.hpp>
 #include <cmath>
 #include <condition_variable>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <thread>
@@ -397,10 +398,12 @@ class Histogram : public Counter {
  *
  * Clients should be using a sub-classes, such as ThreadLocalSwapableNode.
  */
-class SwapableNode : private boost::noncopyable {
+class SwapableNode {
  protected:
   SwapableNode() : ptr_(0) {
   }
+  SwapableNode(const SwapableNode&) = delete;
+  SwapableNode& operator=(const SwapableNode&) = delete;
   virtual ~SwapableNode() {
   }
 
@@ -433,12 +436,14 @@ class SwapableNode : private boost::noncopyable {
  * of type P.
  */
 template <class C, class P>
-class Hold2 : boost::noncopyable {
+class Hold2 {
  public:
   Hold2(C* result, const P& p) : datav_{C(p), C(p)}, result_(result) {
     VLOG(100) << "new Hold2 " << this;
     CHECK(result);
   }
+  Hold2(const Hold2&) = delete;
+  Hold2& operator=(const Hold2&) = delete;
 
   ~Hold2() {
     VLOG(100) << "~Hold2 " << this;
@@ -560,11 +565,13 @@ typedef ThreadLocalSwapableNode<Counter, double> ThreadLocalCounter;
  * func() argument to SwapableNode. This class can be used, for example, to
  * periodically collect and print counters.
  */
-class PeriodicCounters : private boost::noncopyable {
+class PeriodicCounters {
  public:
   explicit PeriodicCounters(const std::vector<SwapableNode*>& counters)
       : counters_(counters) {
   }
+  PeriodicCounters(const PeriodicCounters&) = delete;
+  PeriodicCounters& operator=(const PeriodicCounters&) = delete;
   virtual ~PeriodicCounters() {
     std::unique_lock<std::mutex> lk(mutex_);
     stop_ = true;

@@ -16,7 +16,7 @@
 #  LICENSE file in the root directory of this source tree.
 #
 
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.14)
 
 # There is no C per se in WDT but if you use CXX only here many checks fail
 # Version is Major.Minor.YYMMDDX for up to 10 releases per day (X from 0 to 9)
@@ -26,6 +26,7 @@ project("WDT" LANGUAGES C CXX VERSION 1.32.1910230)
 # WDT uses C++17 features per fdbc5432230290f86ff8ad89ab52d5b7fef232b4
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED on)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # somehow 'option' for this doesn't seeem to work/I don't know how to make it
 set(BUILD_SHARED_LIBS on CACHE BOOL "build shared libs")
@@ -34,8 +35,6 @@ set(BUILD_SHARED_LIBS on CACHE BOOL "build shared libs")
 # it's not so let's set this for now:
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-
-set(WDT_USE_SYSTEM_FOLLY Off CACHE BOOL "Use folly library from system (default off)")
 
 # Optimized by default
 # TODO: This doesn't seem to work / sets default to "" instead of Release...
@@ -47,38 +46,58 @@ set(CMAKE_CXX_FLAGS "-msse4.2 -mpclmul")
 #set(CMAKE_CXX_FLAGS "-msse4.2 -mpclmul -Wextra -Wsign-compare -Wunused-variable")
 #set(CMAKE_CXX_FLAGS "-msse4.2 -mpclmul -Wextra -Wsign-compare -Wunused-variable -Wconversion -Wsign-conversion")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "_bin/wdt")
+set(WDT_USE_SYSTEM_OPENSSL Off CACHE BOOL "Use system OpenSSL instead of fetching BoringSSL")
 
-if (NOT WDT_USE_SYSTEM_FOLLY)
-  # Check that we have the Folly source tree
-  set(FOLLY_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../folly" CACHE PATH
-      "Folly source tree (folly/Conv.h should be reachable from there")
-  # Check for folly - TODO: this doesn't work well for relative paths
-  # (because of relative to build dir vs relative to source tree for -I)
-  if(NOT EXISTS "${FOLLY_SOURCE_DIR}/folly/Conv.h")
-    MESSAGE(FATAL_ERROR "${FOLLY_SOURCE_DIR}/folly/Conv.h not found
-  Fix using:
-  (in a sister directory of the wdt source tree - same level:)
-  git clone https://github.com/facebook/folly.git
-  or change FOLLY_SOURCE_DIR (use ccmake or -DFOLLY_SOURCE_DIR=...)
-  or change WDT_USE_SYSTEM_FOLLY (use ccmake or -DWDT_USE_SYSTEM_FOLLY=...)
-  ")
-  endif()
+include(FetchContent)
+set(FETCHCONTENT_QUIET OFF)
+set(WDT_BUILD_TESTING ${BUILD_TESTING})
 
-
-  # The part of folly that isn't pure .h and we use:
-  set (FOLLY_CPP_SRC
-  "${FOLLY_SOURCE_DIR}/folly/Conv.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/Demangle.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/lang/CString.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/lang/ToAscii.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/hash/Checksum.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/hash/detail/ChecksumDetail.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/hash/detail/Crc32cDetail.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/hash/detail/Crc32CombineDetail.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/ScopeGuard.cpp"
-  "${FOLLY_SOURCE_DIR}/folly/detail/SplitStringSimd.cpp"
-  )
+find_package(gflags CONFIG QUIET)
+if (NOT gflags_FOUND)
+  FetchContent_Declare(
+    gflags
+    GIT_REPOSITORY https://github.com/gflags/gflags.git
+    GIT_TAG v2.2.2)
+  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(BUILD_gflags_LIB ON CACHE BOOL "" FORCE)
+  set(BUILD_gflags_nothreads_LIB OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(gflags)
 endif()
+
+set(BUILD_TESTING ${WDT_BUILD_TESTING} CACHE BOOL "Build WDT tests" FORCE)
+
+find_package(glog CONFIG QUIET)
+if (NOT glog_FOUND)
+  FetchContent_Declare(
+    glog
+    GIT_REPOSITORY https://github.com/google/glog.git
+    GIT_TAG v0.7.1)
+  set(WITH_GFLAGS OFF CACHE BOOL "" FORCE)
+  set(WITH_GTEST OFF CACHE BOOL "" FORCE)
+  set(WITH_GMOCK OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(glog)
+endif()
+
+if (TARGET gflags_shared)
+  set(GFLAGS_TARGET gflags_shared)
+elseif (TARGET gflags::gflags)
+  set(GFLAGS_TARGET gflags::gflags)
+elseif (TARGET gflags)
+  set(GFLAGS_TARGET gflags)
+else()
+  message(FATAL_ERROR "gflags target not found")
+endif()
+
+if (TARGET glog::glog)
+  set(GLOG_TARGET glog::glog)
+elseif (TARGET glog)
+  set(GLOG_TARGET glog)
+else()
+  message(FATAL_ERROR "glog target not found")
+endif()
+
+add_library(folly4wdt INTERFACE)
+target_include_directories(folly4wdt INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # WDT's library proper - comes from: ls -1 *.cpp | grep -iv test
 add_library(wdt_min
@@ -123,62 +142,43 @@ target_link_libraries(wdt wdt_min)
 
 
 
-# Folly uses boost system and filesystem
-#set(Boost_USE_STATIC_LIBS on)
-find_package(Boost COMPONENTS system filesystem REQUIRED)
-include_directories(${Boost_INCLUDE_DIRS})
-
 # We use std:: threads
 find_package(Threads) # this will set ${CMAKE_THREAD_LIBS_INIT} (ie pthreads)
 
 
-# double-conversion
-find_path(DOUBLECONV_INCLUDE_DIR double-conversion/double-conversion.h)
-find_library(DOUBLECONV_LIBRARY double-conversion)
-# Glog
-find_path(GLOG_INCLUDE_DIR glog/logging.h)
-find_library(GLOG_LIBRARY glog)
-# Gflags
-find_path(GFLAGS_INCLUDE_DIR gflags/gflags.h)
-find_library(GFLAGS_LIBRARY gflags)
-# GFLAGS_NAMESPACE is defined in most releases but not in all
-include(CheckCXXSymbolExists)
-list(APPEND CMAKE_REQUIRED_INCLUDES "${GFLAGS_INCLUDE_DIR}/")
-list(APPEND CMAKE_REQUIRED_LIBRARIES "${GFLAGS_LIBRARY}")
-check_cxx_symbol_exists(GFLAGS_NAMESPACE "gflags/gflags.h" CMAKE_GFLAGS_NAMESPACE)
-if (NOT CMAKE_GFLAGS_NAMESPACE)
-  check_cxx_symbol_exists(gflags::GetArgv "gflags/gflags.h" CMAKE_GFLAGS_GFLAGS_GETARGV)
-  if (CMAKE_GFLAGS_GFLAGS_GETARGV)
-    add_definitions("-DGFLAGS_NAMESPACE=gflags")
-  else()
-    check_cxx_symbol_exists(google::GetArgv "gflags/gflags.h" CMAKE_GFLAGS_GOOGLE_GETARGV)
-    if (CMAKE_GFLAGS_GOOGLE_GETARGV)
-      add_definitions("-DGFLAGS_NAMESPACE=google")
-    endif()
-  endif()
-endif()
-list(REMOVE_ITEM CMAKE_REQUIRED_INCLUDES "${GFLAGS_INCLUDE_DIR}/")
-list(REMOVE_ITEM CMAKE_REQUIRED_LIBRARIES "${GFLAGS_LIBRARY}")
-# OpenSSL's crypto lib
-find_package(OpenSSL REQUIRED)
-include_directories(${OPENSSL_INCLUDE_DIR})
-# System Folly
-if (WDT_USE_SYSTEM_FOLLY)
-  find_path(FOLLY_INCLUDE_DIR folly/Conv.h)
-  find_library(FOLLY_LIBRARY folly)
+add_definitions("-DGFLAGS_NAMESPACE=gflags")
+if (WDT_USE_SYSTEM_OPENSSL)
+  find_package(OpenSSL REQUIRED)
+  set(WDT_CRYPTO_TARGET OpenSSL::Crypto)
 else()
-  set(FOLLY_LIBRARY folly4wdt)
-  set(FOLLY_INCLUDE_DIR "${FOLLY_SOURCE_DIR}")
+  FetchContent_Declare(
+    boringssl
+    GIT_REPOSITORY https://boringssl.googlesource.com/boringssl
+    GIT_TAG main)
+  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  FetchContent_GetProperties(boringssl)
+  if (NOT boringssl_POPULATED)
+    if (POLICY CMP0169)
+      cmake_policy(PUSH)
+      cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_Populate(boringssl)
+    if (POLICY CMP0169)
+      cmake_policy(POP)
+    endif()
+    add_subdirectory(${boringssl_SOURCE_DIR} ${boringssl_BINARY_DIR}
+                     EXCLUDE_FROM_ALL)
+  endif()
+  set(BUILD_TESTING ${WDT_BUILD_TESTING} CACHE BOOL "Build WDT tests" FORCE)
+  set(WDT_CRYPTO_TARGET crypto)
 endif()
 
 # You can also add jemalloc to the list if you have it/want it
 target_link_libraries(wdt_min
-  ${FOLLY_LIBRARY}
-  ${GLOG_LIBRARY}
-  ${GFLAGS_LIBRARY}
-  ${Boost_LIBRARIES}
-  ${DOUBLECONV_LIBRARY}
-  ${OPENSSL_CRYPTO_LIBRARY}
+  folly4wdt
+  ${GLOG_TARGET}
+  ${GFLAGS_TARGET}
+  ${WDT_CRYPTO_TARGET}
   ${CMAKE_THREAD_LIBS_INIT} # Must be last to avoid link errors
 )
 
@@ -218,24 +218,10 @@ configure_file(build/folly-config.h.in folly/folly-config.h)
 # Wdt's config/version
 configure_file(WdtConfig.h.in wdt/WdtConfig.h)
 
-if (NOT WDT_USE_SYSTEM_FOLLY)
-  # Malloc stuff  tied to not supporting weaksympbols
-  if (NOT FOLLY_HAVE_WEAK_SYMBOLS)
-    list(APPEND FOLLY_CPP_SRC "${FOLLY_SOURCE_DIR}/folly/memory/detail/MallocImpl.cpp")
-    message(STATUS "no weak symbols, adding MallocImpl to folly src")
-  endif()
-
-  add_library(folly4wdt ${FOLLY_CPP_SRC})
-  target_link_libraries(folly4wdt ${GLOG_LIBRARY} ${DOUBLECONV_LIBRARY})
-endif()
-
 # Order is important - inside fb we want the above
 # folly-config.h to be picked up instead of the fbcode one
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
-include_directories(${FOLLY_INCLUDE_DIR})
-include_directories(${DOUBLECONV_INCLUDE_DIR})
-include_directories(${GLOG_INCLUDE_DIR})
-include_directories(${GFLAGS_INCLUDE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 add_executable(wdtbin wdtCmdLine.cpp ${WDT_FLAGS_RELATED_SRC})
@@ -250,14 +236,6 @@ install(TARGETS wdtbin wdt wdt_min
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   )
-
-if (NOT WDT_USE_SYSTEM_FOLLY)
-  install(TARGETS folly4wdt
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    )
-endif()
 
 ### Install header files
 
@@ -336,8 +314,8 @@ if (BUILD_TESTING)
   )
 
   target_link_libraries(wdtbenchlib
-    ${GLOG_LIBRARY}
-    ${GFLAGS_LIBRARY}
+    ${GLOG_TARGET}
+    ${GFLAGS_TARGET}
   )
 
   add_library(wdtbenchtestslib

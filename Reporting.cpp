@@ -11,6 +11,7 @@
 #include <wdt/WdtOptions.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <set>
